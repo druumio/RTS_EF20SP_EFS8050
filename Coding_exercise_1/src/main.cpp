@@ -2,9 +2,15 @@
 #include <Arduino_FreeRTOS.h>
 #include <semphr.h> // add the FreeRTOS functions for Semaphores (or Flags).
 
-#define LEDPIN1 11
-#define LEDPIN2 12
-#define LEDPIN3 13
+#define LEDPIN1 PB5 // 11
+#define LEDPIN2 PB6 // 12
+#define LEDPIN3 PB7 // 13
+
+/*
+Reference:
+  FreeRTOS\examples\AnalogRead_DigitalRead
+  FreeRTOS\examples\Blink_AnalogRead
+*/
 
 // Declare a mutex Semaphore Handle which we will use to manage the Serial Port.
 // It will be used to ensure only one Task is accessing this resource at any time.
@@ -75,23 +81,27 @@ void TaskLED1(void *pvParameters __attribute__((unused))) // This is a Task.
   /*
   Task for blinking 1st led
   */
-  pinMode(LEDPIN1, OUTPUT);
+
+  // Setup LEDPIN1 as output
+  // pinMode(LEDPIN1, OUTPUT);
+  DDRB |= _BV(LEDPIN1);
+
+  printMessage("Starting Task1");
 
   for (;;) // A Task shall never return or exit.
   {
-    if (xSemaphoreTake(xSerialSemaphore, (TickType_t)5) == pdTRUE)
-    {
-      // We were able to obtain or "Take" the semaphore and can now access the shared resource.
-      // We want to have the Serial Port for us alone, as it takes some time to print,
-      // so we don't want it getting stolen during the middle of a conversion.
-      // print out the state of the button:
-      Serial.println("LED 1 is on TASK 1 is running");
+    printMessage("Task1 triggered");
 
-      xSemaphoreGive(xSerialSemaphore); // Now free or "Give" the Serial Port for others.
-    }
-    digitalWrite(LEDPIN1, HIGH);           // turn the LED on (HIGH is the voltage level)
+    // turn the LED on (HIGH is the voltage level)
+    // digitalWrite(LEDPIN1, HIGH);
+    PORTB |= _BV(LEDPIN1);
+
     vTaskDelay(1000 / portTICK_PERIOD_MS); // wait for one second
-    digitalWrite(LEDPIN1, LOW);            // turn the LED off by making the voltage LOW
+
+    // turn the LED off by making the voltage LOW
+    // digitalWrite(LEDPIN1, LOW);
+    PORTB &= _BV(LEDPIN1);
+
     vTaskDelay(1000 / portTICK_PERIOD_MS); // wait for one second
   }
 }
@@ -99,25 +109,29 @@ void TaskLED1(void *pvParameters __attribute__((unused))) // This is a Task.
 void TaskLED2(void *pvParameters __attribute__((unused))) // This is a Task.
 {
   /*
-  Task for blinking 1st led
+  Task for blinking 2st led
   */
-  pinMode(LEDPIN2, OUTPUT);
+
+  // Setup LEDPIN2 as output
+  // pinMode(LEDPIN2, OUTPUT);
+  DDRB |= _BV(LEDPIN2);
+
+  printMessage("Starting Task2");
 
   for (;;) // A Task shall never return or exit.
   {
-    if (xSemaphoreTake(xSerialSemaphore, (TickType_t)5) == pdTRUE)
-    {
-      // We were able to obtain or "Take" the semaphore and can now access the shared resource.
-      // We want to have the Serial Port for us alone, as it takes some time to print,
-      // so we don't want it getting stolen during the middle of a conversion.
-      // print out the state of the button:
-      Serial.println("LED 2 is on TASK 2 is running");
+    printMessage("Task2 triggered");
 
-      xSemaphoreGive(xSerialSemaphore); // Now free or "Give" the Serial Port for others.
-    }
-    digitalWrite(LEDPIN2, HIGH);           // turn the LED on (HIGH is the voltage level)
+    // turn the LED on (HIGH is the voltage level)
+    // digitalWrite(LEDPIN2, HIGH);
+    PORTB |= _BV(LEDPIN2);
+
     vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for one second
-    digitalWrite(LEDPIN2, LOW);            // turn the LED off by making the voltage LOW
+
+    // turn the LED off by making the voltage LOW
+    // digitalWrite(LEDPIN2, LOW);
+    PORTB &= _BV(LEDPIN2);
+
     vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for one second
   }
 }
@@ -125,25 +139,42 @@ void TaskLED2(void *pvParameters __attribute__((unused))) // This is a Task.
 void TaskLED3(void *pvParameters __attribute__((unused))) // This is a Task.
 {
   /*
-  Task for blinking 1st led
+  Task for blinking 3st led
   */
-  pinMode(LEDPIN3, OUTPUT);
+
+  // Setup LEDPIN3 as output
+  // pinMode(LEDPIN3, OUTPUT);
+  DDRB |= _BV(LEDPIN3);
+
+  printMessage("Starting Task3");
 
   for (;;) // A Task shall never return or exit.
   {
-    if (xSemaphoreTake(xSerialSemaphore, (TickType_t)5) == pdTRUE)
-    {
-      // We were able to obtain or "Take" the semaphore and can now access the shared resource.
-      // We want to have the Serial Port for us alone, as it takes some time to print,
-      // so we don't want it getting stolen during the middle of a conversion.
-      // print out the state of the button:
-      Serial.println("LED 3 is on TASK 3 is running");
+    printMessage("Task3 triggered");
 
-      xSemaphoreGive(xSerialSemaphore); // Now free or "Give" the Serial Port for others.
-    }
-    digitalWrite(LEDPIN3, HIGH);           // turn the LED on (HIGH is the voltage level)
+    // turn the LED on (HIGH is the voltage level)
+    // digitalWrite(LEDPIN3, HIGH);
+    PORTB |= _BV(LEDPIN3);
+
     vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for one second
-    digitalWrite(LEDPIN3, LOW);            // turn the LED off by making the voltage LOW
+
+    // turn the LED off by making the voltage LOW
+    // digitalWrite(LEDPIN3, LOW);
+    PORTB &= _BV(LEDPIN3);
+
     vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for one second
+  }
+}
+
+void printMessage(String msg)
+{
+  if (xSemaphoreTake(xSerialSemaphore, (TickType_t)5) == pdTRUE)
+  {
+    // We were able to obtain or "Take" the semaphore and can now access the shared resource.
+    // We want to have the Serial Port for us alone, as it takes some time to print,
+    // so we don't want it getting stolen during the middle of a conversion.
+    Serial.println(msg);
+
+    xSemaphoreGive(xSerialSemaphore); // Now free or "Give" the Serial Port for others.
   }
 }
