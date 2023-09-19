@@ -10,16 +10,20 @@
 Reference:
   FreeRTOS\examples\AnalogRead_DigitalRead
   FreeRTOS\examples\Blink_AnalogRead
+
+Improvements:
+  Tasks 1-3 are identical, they could be simplified to TaskLed(LEDPINX)
 */
 
 // Declare a mutex Semaphore Handle which we will use to manage the Serial Port.
 // It will be used to ensure only one Task is accessing this resource at any time.
 SemaphoreHandle_t xSerialSemaphore;
 
-// define 3 Tasks for blinking leds
+// Function declarations
 void TaskLED1(void *pvParameters);
 void TaskLED2(void *pvParameters);
 void TaskLED3(void *pvParameters);
+void printMessage(String msg);
 
 void setup()
 {
@@ -45,7 +49,7 @@ void setup()
 
   xTaskCreate(
       TaskLED1,
-      "Blink1" /*A name just for humans*/,
+      "BlinkLED1" /*A name just for humans*/,
       128 /*This stack size can be checked & adjusted by reading the Stack Highwater*/,
       NULL,
       2 /*Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.*/,
@@ -53,7 +57,7 @@ void setup()
 
   xTaskCreate(
       TaskLED2,
-      "Blink2" /*A name just for humans*/,
+      "BlinkLED2" /*A name just for humans*/,
       128 /*This stack size can be checked & adjusted by reading the Stack Highwater*/,
       NULL,
       2 /*Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.*/,
@@ -61,7 +65,7 @@ void setup()
 
   xTaskCreate(
       TaskLED3,
-      "Blink3" /*A name just for humans*/,
+      "BlinkLED3" /*A name just for humans*/,
       128 /*This stack size can be checked & adjusted by reading the Stack Highwater*/,
       NULL,
       2 /*Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.*/,
@@ -86,6 +90,7 @@ void TaskLED1(void *pvParameters __attribute__((unused))) // This is a Task.
   // pinMode(LEDPIN1, OUTPUT);
   DDRB |= _BV(LEDPIN1);
 
+  // Safe Serial.print()
   printMessage("Starting Task1");
 
   for (;;) // A Task shall never return or exit.
@@ -116,6 +121,7 @@ void TaskLED2(void *pvParameters __attribute__((unused))) // This is a Task.
   // pinMode(LEDPIN2, OUTPUT);
   DDRB |= _BV(LEDPIN2);
 
+  // Safe Serial.print()
   printMessage("Starting Task2");
 
   for (;;) // A Task shall never return or exit.
@@ -126,13 +132,13 @@ void TaskLED2(void *pvParameters __attribute__((unused))) // This is a Task.
     // digitalWrite(LEDPIN2, HIGH);
     PORTB |= _BV(LEDPIN2);
 
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for one second
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for 2 second
 
     // turn the LED off by making the voltage LOW
     // digitalWrite(LEDPIN2, LOW);
     PORTB &= _BV(LEDPIN2);
 
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for one second
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // wait for 2 second
   }
 }
 
@@ -146,6 +152,7 @@ void TaskLED3(void *pvParameters __attribute__((unused))) // This is a Task.
   // pinMode(LEDPIN3, OUTPUT);
   DDRB |= _BV(LEDPIN3);
 
+  // Safe Serial.print()
   printMessage("Starting Task3");
 
   for (;;) // A Task shall never return or exit.
@@ -156,13 +163,13 @@ void TaskLED3(void *pvParameters __attribute__((unused))) // This is a Task.
     // digitalWrite(LEDPIN3, HIGH);
     PORTB |= _BV(LEDPIN3);
 
-    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for one second
+    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for 3 second
 
     // turn the LED off by making the voltage LOW
     // digitalWrite(LEDPIN3, LOW);
     PORTB &= _BV(LEDPIN3);
 
-    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for one second
+    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for 3 second
   }
 }
 
