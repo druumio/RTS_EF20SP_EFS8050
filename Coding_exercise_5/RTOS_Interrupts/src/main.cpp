@@ -6,6 +6,7 @@
 /*
 https://exploreembedded.com/wiki/Resuming_Task_From_ISR#Downloads
 https://www.renesas.com/us/en/products/gadget-renesas/reference/gr-rose/rtos-semaphore
+https://www.arduino.cc/en/Tutorial/BuiltInExamples/Button
 */
 
 #define BUTTONPIN PE4 // D2
@@ -32,6 +33,7 @@ void loop(void)
   // Mty
 }
 
+//Function to be called when ISR trigger
 void ExternalInterrupt(void)
 {
   xSemaphoreGiveFromISR(xBinarySemaphore, pdFALSE);
@@ -39,13 +41,13 @@ void ExternalInterrupt(void)
 
 void taskTogleLED(void *pvParameters)
 {
-  DDRB |= _BV(LEDPIN);
-  PORTB &= _BV(LEDPIN);
+  DDRB |= _BV(LEDPIN); // LEDPIN output
+  PORTB &= _BV(LEDPIN); // Turn LED off
   Serial.println("Starting LED-task");
   for (;;)
   {
-    xSemaphoreTake(xBinarySemaphore, portMAX_DELAY);
+    xSemaphoreTake(xBinarySemaphore, portMAX_DELAY); // Wait for semaphore
     Serial.println("Got semaphore for alarm ");
-    PORTB ^= _BV(LEDPIN);
+    PORTB ^= _BV(LEDPIN); // Switch LED state on/off
   }
 }
