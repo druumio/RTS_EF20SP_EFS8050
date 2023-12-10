@@ -1,18 +1,51 @@
 #include <Arduino.h>
+#include <Arduino_FreeRTOS.h>
+#include "semphr.h"
+#include "task.h"
 
-// put function declarations here:
-int myFunction(int, int);
+/*
+https://exploreembedded.com/wiki/Resuming_Task_From_ISR#Downloads
+https://www.renesas.com/us/en/products/gadget-renesas/reference/gr-rose/rtos-semaphore
+*/
 
-void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+#define BUTTONPIN PE4 // D2
+#define LEDPIN PB5 // D11
+
+SemaphoreHandle_t xBinarySemaphore;
+
+void ExternalInterrupt(void);
+void taskTogleLED(void *pvParameters);
+
+void setup(void)
+{
+  Serial.begin(9600);
+  Serial.println("Setup Start");
+  xTaskCreate(taskTogleLED,"LEDtask",128,NULL,2,NULL);
+  attachInterrupt(digitalPinToInterrupt(2 /*BUTTONPIN*/), ExternalInterrupt /*Function to call when triggered*/, FALLING /*Edge to trigger to*/);
+  xBinarySemaphore = xSemaphoreCreateBinary();
+  Serial.println("Starting Task Scheduler");
+  vTaskStartScheduler();
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
+void loop(void)
+{
+  // Mty
 }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+void ExternalInterrupt(void)
+{
+  xSemaphoreGiveFromISR(xBinarySemaphore, pdFALSE);
+}
+
+void taskTogleLED(void *pvParameters)
+{
+  DDRB |= _BV(LEDPIN);
+  PORTB &= _BV(LEDPIN);
+  Serial.println("Starting LED-task");
+  for (;;)
+  {
+    xSemaphoreTake(xBinarySemaphore, portMAX_DELAY);
+    Serial.println("Got semaphore for alarm ");
+    PORTB ^= _BV(LEDPIN);
+  }
 }
