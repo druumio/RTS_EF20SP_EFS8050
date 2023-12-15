@@ -10,9 +10,11 @@ https://www.arduino.cc/en/Tutorial/BuiltInExamples/Button
 */
 
 #define BUTTONPIN PE4 // D2
-#define LEDPIN PB5 // D11
+#define LEDPIN PB5    // D11
+#define DEBOUNCING_TIME (uint32_t)150
 
 SemaphoreHandle_t xBinarySemaphore;
+volatile uint32_t last_interrupt;
 
 void ExternalInterrupt(void);
 void taskTogleLED(void *pvParameters);
@@ -21,7 +23,7 @@ void setup(void)
 {
   Serial.begin(9600);
   Serial.println("Setup Start");
-  xTaskCreate(taskTogleLED,"LEDtask",128,NULL,2,NULL);
+  xTaskCreate(taskTogleLED, "LEDtask", 128, NULL, 2, NULL);
   attachInterrupt(digitalPinToInterrupt(2 /*BUTTONPIN*/), ExternalInterrupt /*Function to call when triggered*/, FALLING /*Edge to trigger to*/);
   xBinarySemaphore = xSemaphoreCreateBinary();
   Serial.println("Starting Task Scheduler");
@@ -30,18 +32,23 @@ void setup(void)
 
 void loop(void)
 {
-  // Mty
+  // Actually this is FreeRTOS Idle task
 }
 
-//Function to be called when ISR trigger
+// Function to be called when ISR trigger
 void ExternalInterrupt(void)
 {
-  xSemaphoreGiveFromISR(xBinarySemaphore, pdFALSE);
+  //Debounce interrupt button
+  if ((uint32_t)(micros() - last_interrupt) >= (DEBOUNCING_TIME * 1000))
+  {
+    xSemaphoreGiveFromISR(xBinarySemaphore, pdFALSE);
+    last_interrupt = micros();
+  }
 }
 
 void taskTogleLED(void *pvParameters)
 {
-  DDRB |= _BV(LEDPIN); // LEDPIN output
+  DDRB |= _BV(LEDPIN);  // LEDPIN output
   PORTB &= _BV(LEDPIN); // Turn LED off
   Serial.println("Starting LED-task");
   for (;;)
