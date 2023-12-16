@@ -14,6 +14,11 @@ Definitions
 */
 #define TASKBIT_MOISTURE_READ (1UL << 0UL)
 #define TASKBIT_LIGHT_READ (1UL << 1UL)
+#define PUMP1 (1UL << 0UL)
+#define PUMP2 (1UL << 1UL)
+#define PUMP3 (1UL << 2UL)
+#define PUMP4 (1UL << 3UL)
+#define PUMP5 (1UL << 4UL)
 #define LEDPIN3 PB6 // 12
 #define LEDPIN2 PB5 // 11
 #define LEDPIN1 PB4 // 10
@@ -29,11 +34,10 @@ Macros
 /*
 Globals
 */
-SemaphoreHandle_t xSerialSemaphore;
-SemaphoreHandle_t xSensorsSemaphore;
-SemaphoreHandle_t xTimeSemaphore;
-EventGroupHandle_t xEventGroup;
+SemaphoreHandle_t xSerialSemaphore, xSensorsSemaphore, xTimeSemaphore;
+EventGroupHandle_t xEventGroup, xPumpGroup;
 QueueHandle_t xQueue;
+TaskHandle_t MoistureTaskHandle;
 
 enum currentTimeofDay
 {
@@ -52,7 +56,7 @@ static struct
   String sensorName;
   uint8_t sensorAddress;
   uint8_t pumpAddress;
-  uint16_t pumpTreshold = 300;
+  uint16_t pumpTreshold = 450;
   uint16_t reading = 0;
 } globalSensors[5];
 
@@ -73,10 +77,12 @@ void LightManagementTask(void *pvParameters);
 void WaterControlTask(void *pvParameters);
 void UserInputTask(void *pvParameters);
 void ReportTask(void *pvParameters);
+void pumpTask(void *pvParameters);
 void updateTime(uint8_t, uint8_t);
 void setTime(uint8_t, uint8_t);
 static void addSensor(String, uint8_t, uint8_t);
 void ThreadSafePrintMessage(String, uint8_t);
+uint16_t readSensor(uint8_t);
 void setup(void);
 void loop(void);
 /*
@@ -129,13 +135,11 @@ void setup(void)
   }
   // Create eventgroup for handling timed tasks
   xEventGroup = xEventGroupCreate();
+  // Create eventgroup to handle which pump to operate
+  xPumpGroup = xEventGroupCreate();
 
-  xQueue = xQueueCreate( 5, sizeof( int16_t ) );
-  /*
-
-  Something
-
-  */
+  xQueue = xQueueCreate(5, sizeof(int16_t));
+  ///@todo create tasks!
   Serial.println("Starting Task Scheduler");
   vTaskStartScheduler();
 }
@@ -168,7 +172,6 @@ void SoilMoistureTask(void *pvParameters)
 
   Setup for this task
   */
-
   if (xSemaphoreTake(xSensorsSemaphore, portMAX_DELAY) == pdTRUE)
   {
     // Construct fake sensors
@@ -218,7 +221,9 @@ void LightManagementTask(void *pvParameters)
       /*
       Monitor light level live and adjust the amount of light given by LEDs
       */
+      // Start Light mesuring in the event tast
       xEventGroupSetBits(xEventGroup, TASKBIT_LIGHT_READ);
+      // Wait for result from queue
       if (xQueueReceive(xQueue, &light_level, portMAX_DELAY) == pdPASS)
       {
         if (light_level == -1)
@@ -227,9 +232,24 @@ void LightManagementTask(void *pvParameters)
         }
         else if (light_level < 20)
         {
+          // Turn on all LEDs for low light levels
           PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3));
         }
-        
+        else if (light_level < 60)
+        {
+          // Turn on first two LEDs for medium light levels
+          PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2));
+        }
+        else if (light_level < 100)
+        {
+          // Turn on the first LED for high light levels
+          PORTB |= _BV(LEDPIN1);
+        }
+        else
+        {
+          // Turn off all LEDs for very high light levels
+          PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
+        }
       }
       break;
 
@@ -252,22 +272,114 @@ void WaterControlTask(void *pvParameters)
 {
   /*
   There are five pumps, each assosiated with one of the moisture-sensors.
-  Pumps work only /USER DEFINED/ amout of times during day, they never work during night and
+  Pumps work only 4 times during day, they never work during night and
   run for /TBD amount of time/.
 
   Keeps track of when to pump water from each pump
 
   Setup for this task
   */
-
+  const EventBits_t xBitsToWaitFor = (PUMP1 | PUMP2 | PUMP3 | PUMP4 | PUMP5);
+  EventBits_t xEventGroupValue;
+  int *pumpNum;
   for (;;)
   {
     /*
     Running tasks
     */
+
+    // Wait for any of the specified pump bits to be set in the event group.
+    xEventGroupValue = xEventGroupWaitBits(xPumpGroup,
+                                           xBitsToWaitFor,
+                                           pdTRUE,         // Clear the bits in the event group on exit.
+                                           pdTRUE,         // Wait for all specified bits to be set.
+                                           portMAX_DELAY); // Block indefinitely until the bits are set.
+
+    // Check which pump bits are set and create a corresponding pump task.
+    if ((xEventGroupValue & PUMP1) != 0)
+    {
+      int pumpValue = 0;
+      pumpNum = &pumpValue;
+      xTaskCreate(pumpTask, "PumpTask_0", 2048, (void *)pumpNum, 1, NULL);
+    }
+    if ((xEventGroupValue & PUMP2) != 0)
+    {
+      int pumpValue = 1;
+      pumpNum = &pumpValue;
+      xTaskCreate(pumpTask, "PumpTask_1", 2048, (void *)pumpNum, 1, NULL);
+    }
+    if ((xEventGroupValue & PUMP3) != 0)
+    {
+      int pumpValue = 2;
+      pumpNum = &pumpValue;
+      xTaskCreate(pumpTask, "PumpTask_2", 2048, (void *)pumpNum, 1, NULL);
+    }
+    if ((xEventGroupValue & PUMP4) != 0)
+    {
+      int pumpValue = 3;
+      pumpNum = &pumpValue;
+      xTaskCreate(pumpTask, "PumpTask_3", 2048, (void *)pumpNum, 1, NULL);
+    }
+    if ((xEventGroupValue & PUMP5) != 0)
+    {
+      int pumpValue = 4;
+      pumpNum = &pumpValue;
+      xTaskCreate(pumpTask, "PumpTask_4", 2048, (void *)pumpNum, 1, NULL);
+    }
   }
 }
 
+void MainEventTask(void *pvParameters)
+{
+  const EventBits_t xBitsToWaitFor = (TASKBIT_MOISTURE_READ | TASKBIT_LIGHT_READ);
+  EventBits_t xEventGroupValue;
+  uint16_t localTreshold, localReading;
+  for (;;)
+  {
+    xEventGroupValue = xEventGroupWaitBits(xEventGroup,
+                                           xBitsToWaitFor,
+                                           pdTRUE,         // Clear the bits in the event group on exit.
+                                           pdTRUE,         // Wait for all specified bits to be set.
+                                           portMAX_DELAY); // Block indefinitely until the bits are set.
+    if ((xEventGroupValue & TASKBIT_MOISTURE_READ) != 0)
+    {
+      writeLine("Soil Moisture Event Flag received\nSuspending SoilMoistureTask");
+      vTaskSuspend(MoistureTaskHandle);
+      if (xSemaphoreTake(xSensorsSemaphore, portMAX_DELAY) == pdTRUE)
+      {
+        // Reading All sensors
+        for (int i; i < 5; i++)
+        {
+          localTreshold = globalSensors[i].pumpTreshold;
+          localReading = readSensor(globalSensors[i].sensorAddress);
+          if (localReading > 0) // If reading sensor was succesfull. -1 == ERROR
+          {
+            globalSensors[i].reading = localReading;
+            if (localReading > localTreshold)
+            {
+              xEventGroupSetBits(xPumpGroup, (1UL << i));
+            }
+          }
+          else
+          {
+            write("Error while reading sensor number: ");
+            String str = (String)i;
+            writeLine(str);
+          }
+        }
+        writeLine("Reading Sensors Done resuming SoilMoistureTask");
+        xSemaphoreGive(xSensorsSemaphore);
+        vTaskResume(MoistureTaskHandle);
+      }
+    }
+    if ((xEventGroupValue & TASKBIT_LIGHT_READ) != 0)
+    {
+      ///@todo
+    }
+  }
+}
+
+///@todo
 void UserInputTask(void *pvParameters)
 {
   /*
@@ -297,6 +409,7 @@ void UserInputTask(void *pvParameters)
   }
 }
 
+///@todo
 void ReportTask(void *pvParameters)
 {
   /*
@@ -312,6 +425,45 @@ void ReportTask(void *pvParameters)
     Running tasks
     */
   }
+}
+
+/// @brief Task function to control a pump.
+/// @param pvParameters A pointer to the pump number (integer) passed as a task parameter.
+void pumpTask(void *pvParameters)
+{
+  /*
+  Start and Stop pump defined by param
+
+  Setup for this task
+  */
+  // Extract the pump number from the task parameters.
+  int *local_pumpNum;
+  local_pumpNum = (int *)pvParameters;
+  // Generate a message string indicating the pump number.
+  String msg = "Pump_" + String(*local_pumpNum) + " ";
+
+  /*
+  Running task
+  */
+  // Perform pump start operations.
+  write(msg);
+  writeLine("Start");
+  // Delay for running the pump
+  vTaskDelay(30 / portTICK_PERIOD_MS);
+  // Perform pump stop operations.
+  write(msg);
+  writeLine("Stop. Deleting task");
+  // Delete the task. This is typically done to self-terminate the task.
+  vTaskDelete(NULL);
+}
+
+/// @brief Fake sensor responce
+/// @param address Address of the sensor being read
+/// @return random value between 250 and 500
+uint16_t readSensor(uint8_t address)
+{
+  int reading = random(250, 500);
+  return reading;
 }
 
 /// @brief Update the time based on the specified part (hours, minutes, or seconds).
