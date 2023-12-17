@@ -37,7 +37,7 @@ Globals
 SemaphoreHandle_t xSerialSemaphore, xSensorsSemaphore, xTimeSemaphore;
 EventGroupHandle_t xEventGroup, xPumpGroup;
 QueueHandle_t xQueue;
-TaskHandle_t MoistureTaskHandle;
+TaskHandle_t MoistureTaskHandle, reportTaskHandle, UItaskHandle;
 
 enum currentTimeofDay
 {
@@ -49,6 +49,9 @@ enum currentTimeofDay
 };
 
 volatile uint8_t day_night = day;
+uint8_t manual_automatic = 0;
+uint8_t lights_off = 18;
+uint8_t lights_on = 6;
 
 static uint8_t sensorCount = 0;
 static struct
@@ -78,11 +81,14 @@ void WaterControlTask(void *pvParameters);
 void UserInputTask(void *pvParameters);
 void ReportTask(void *pvParameters);
 void pumpTask(void *pvParameters);
+void MainEventTask(void *pvParameters);
+void timeIncrementTask(void *pvParameters);
 void updateTime(uint8_t, uint8_t);
 void setTime(uint8_t, uint8_t);
 static void addSensor(String, uint8_t, uint8_t);
 void ThreadSafePrintMessage(String, uint8_t);
 uint16_t readSensor(uint8_t);
+uint16_t readLightLevel(void);
 void setup(void);
 void loop(void);
 /*
@@ -139,7 +145,15 @@ void setup(void)
   xPumpGroup = xEventGroupCreate();
 
   xQueue = xQueueCreate(5, sizeof(int16_t));
-  ///@todo create tasks!
+
+  xTaskCreate(MainEventTask,"",128,NULL,0,NULL);
+  xTaskCreate(SoilMoistureTask,"",128,MoistureTaskHandle,1,NULL);
+  xTaskCreate(LightManagementTask,"",128,NULL,2,NULL);
+  xTaskCreate(WaterControlTask,"",128,NULL,2,NULL);
+  xTaskCreate(UserInputTask,"",128,UItaskHandle,3,NULL);
+  xTaskCreate(ReportTask,"",128,reportTaskHandle,4,NULL);
+  xTaskCreate(timeIncrementTask,"",128,NULL,1,NULL);
+
   Serial.println("Starting Task Scheduler");
   vTaskStartScheduler();
 }
@@ -161,12 +175,6 @@ void SoilMoistureTask(void *pvParameters)
   100% 250mV
   Sensor reading is mapped between those values and displayed to user in %.
   Direct measurement values are used within the program.
-
-  Each sensor is read every /TBD/ minutes and values compared to tresholds
-  set for the individual sensor.
-  Different plants enjoy different environments and need more/less water.
-  If treshold is reached /TBD cross thread com method/ is sent and
-  pump related to sensor is set to be activated.
 
   Measures and keeps track of each sensors reading.
 
@@ -215,52 +223,77 @@ void LightManagementTask(void *pvParameters)
     /*
     Running tasks
     */
-    switch (day_night)
+    switch (manual_automatic)
     {
-    case day:
-      /*
-      Monitor light level live and adjust the amount of light given by LEDs
-      */
-      // Start Light mesuring in the event tast
-      xEventGroupSetBits(xEventGroup, TASKBIT_LIGHT_READ);
-      // Wait for result from queue
-      if (xQueueReceive(xQueue, &light_level, portMAX_DELAY) == pdPASS)
+    case 0:
+      switch (day_night)
       {
-        if (light_level == -1)
+      case day:
+        /*
+        Monitor light level live and adjust the amount of light given by LEDs
+        */
+        // Start Light mesuring in the event tast
+        xEventGroupSetBits(xEventGroup, TASKBIT_LIGHT_READ);
+        // Wait for result from queue
+        if (xQueueReceive(xQueue, &light_level, portMAX_DELAY) == pdPASS)
         {
-          writeLine("Light level reading failed!");
+          if (light_level == -1)
+          {
+            writeLine("Light level reading failed!");
+          }
+          else if (light_level < 20)
+          {
+            // Turn on all LEDs for low light levels
+            PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3));
+          }
+          else if (light_level < 60)
+          {
+            // Turn on first two LEDs for medium light levels
+            PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2));
+            PORTB &= (_BV(LEDPIN3));
+          }
+          else if (light_level < 100)
+          {
+            // Turn on the first LED for high light levels
+            PORTB |= _BV(LEDPIN1);
+            PORTB &= (_BV(LEDPIN2) | _BV(LEDPIN3));
+          }
+          else
+          {
+            // Turn off all LEDs for very high light levels
+            PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
+          }
         }
-        else if (light_level < 20)
-        {
-          // Turn on all LEDs for low light levels
-          PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3));
-        }
-        else if (light_level < 60)
-        {
-          // Turn on first two LEDs for medium light levels
-          PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2));
-        }
-        else if (light_level < 100)
-        {
-          // Turn on the first LED for high light levels
-          PORTB |= _BV(LEDPIN1);
-        }
-        else
-        {
-          // Turn off all LEDs for very high light levels
-          PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
-        }
+        break;
+
+      case night:
+        /*
+        Lights off during night
+        Night-time 18:00 - 6:00
+        */
+        PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
+        break;
+
+      default:
+        break;
       }
       break;
+    case 1:
+      if ((currentTime.hour > lights_off) || (currentTime.hour < lights_on))
+      {
+        PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
+      }
+      else if ((currentTime.hour < lights_off) || (currentTime.hour > lights_on))
+      {
+        PORTB |= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs on
+      }
+      else
+      {
+        PORTB |= _BV(LEDPIN3);
+        PORTB &= (_BV(LEDPIN2) | _BV(LEDPIN1));
+      }
 
-    case night:
-      /*
-      Lights off during night
-      Night-time 18:00 - 6:00
-      */
-      PORTB &= (_BV(LEDPIN1) | _BV(LEDPIN2) | _BV(LEDPIN3)); // Turn LEDs off
       break;
-
     default:
       break;
     }
@@ -272,8 +305,6 @@ void WaterControlTask(void *pvParameters)
 {
   /*
   There are five pumps, each assosiated with one of the moisture-sensors.
-  Pumps work only 4 times during day, they never work during night and
-  run for /TBD amount of time/.
 
   Keeps track of when to pump water from each pump
 
@@ -343,6 +374,7 @@ void MainEventTask(void *pvParameters)
                                            portMAX_DELAY); // Block indefinitely until the bits are set.
     if ((xEventGroupValue & TASKBIT_MOISTURE_READ) != 0)
     {
+      // Since program is already reactin to event flag from SoilMoistureTask that task is suspended
       writeLine("Soil Moisture Event Flag received\nSuspending SoilMoistureTask");
       vTaskSuspend(MoistureTaskHandle);
       if (xSemaphoreTake(xSensorsSemaphore, portMAX_DELAY) == pdTRUE)
@@ -350,13 +382,18 @@ void MainEventTask(void *pvParameters)
         // Reading All sensors
         for (int i; i < 5; i++)
         {
+          // Read set pumping treshold for i pump
           localTreshold = globalSensors[i].pumpTreshold;
+          // Perform sensor read
           localReading = readSensor(globalSensors[i].sensorAddress);
           if (localReading > 0) // If reading sensor was succesfull. -1 == ERROR
           {
+            // Save value from sensor to i sensors data
             globalSensors[i].reading = localReading;
+            // Test if i pump need to be turned on
             if (localReading > localTreshold)
             {
+              // Set start pump bit
               xEventGroupSetBits(xPumpGroup, (1UL << i));
             }
           }
@@ -374,42 +411,113 @@ void MainEventTask(void *pvParameters)
     }
     if ((xEventGroupValue & TASKBIT_LIGHT_READ) != 0)
     {
-      ///@todo
+      uint16_t lValueToSend;
+      lValueToSend = readLightLevel();
+      xQueueSend(xQueue, &lValueToSend, portMAX_DELAY);
+      taskYIELD();
     }
   }
 }
 
-///@todo
 void UserInputTask(void *pvParameters)
 {
   /*
   Task for setting user defined settings in program.
 
-  IF input:
-    switch(input):
-      case():
-        test
-      case():
-        test
-      case():
-        test
-      case():
-        test
-    if change case called changed something important
-      run POR -sequence
-
   Setup for this task
   */
-
+  writeLine("At any point while running the program User can change its parameters by sending a command");
+  writeLine("Awailable commands:");
+  writeLine("Change light mode: l");
+  writeLine("Change pump treshold value: p");
+  writeLine("Set system time: t");
   for (;;)
   {
     /*
     Running tasks
     */
+    if (Serial.available() > 0)
+    {
+      vTaskSuspend(reportTaskHandle);
+
+      // read the incoming String:
+      String str = Serial.readString();
+      str.trim();
+      if (str == "l")
+      {
+        writeLine("Set light mode to automatic or manual: a / m");
+        str = Serial.readString();
+        if (str == "a")
+        {
+          manual_automatic = 0;
+        }
+        else if (str == "m")
+        {
+          manual_automatic = 1;
+          str = "Currently lights go on at " + (String)lights_on;
+          write(str);
+          writeLine(" edit? y/n");
+          str = Serial.readString();
+          if (str == "y")
+          {
+            writeLine("Lights on: ");
+            str = Serial.readString();
+            lights_on = str.toInt();
+          }
+          str = "Currently lights go off at " + (String)lights_off;
+          write(str);
+          writeLine(" edit? y/n");
+          str = Serial.readString();
+          if (str == "y")
+          {
+            writeLine("Lights off: ");
+            str = Serial.readString();
+            lights_on = str.toInt();
+          }
+        }
+        else
+        {
+          writeLine("Not recognised as command");
+        }
+      }
+      else if (str == "p")
+      {
+        writeLine("Which pump to change? 1-5");
+        str = Serial.readString();
+        uint8_t pump = str.toInt();
+        writeLine("New treshold?");
+        str = Serial.readString();
+        globalSensors[pump - 1].pumpTreshold = str.toInt();
+      }
+      else if (str == "t")
+      {
+        writeLine("Which value to change? h/m/s");
+        String unit = Serial.readString();
+        writeLine("New value?");
+        String value = Serial.readString();
+        if (unit == "h")
+        {
+          setTime(hours, value.toInt());
+        }
+        else if (unit == "m")
+        {
+          setTime(minutes, value.toInt());
+        }
+        else if (unit == "s")
+        {
+          setTime(seconds, value.toInt());
+        }
+      }
+      else
+      {
+        writeLine("Not recognised as command");
+      }
+
+      vTaskResume(reportTaskHandle);
+    }
   }
 }
 
-///@todo
 void ReportTask(void *pvParameters)
 {
   /*
@@ -424,6 +532,58 @@ void ReportTask(void *pvParameters)
     /*
     Running tasks
     */
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    vTaskSuspend(UItaskHandle);
+
+    writeLine("================================================================");
+    writeLine("System report");
+    writeLine("================================================================");
+    String str = "Time: " + (String)currentTime.hour + "h " + (String)currentTime.min + "min " + (String)currentTime.sec + "sec\n";
+    writeLine(str);
+    writeLine("Current sensor readings:");
+    str = "";
+    for (uint8_t i = 0; i < 5; i++)
+    {
+      str = str + "Sensor" + (String)(i + 1) + ": " + (String)globalSensors[i].reading + "\n";
+    }
+    writeLine(str);
+    write("Current light mode: ");
+    if (manual_automatic == 0)
+    {
+      writeLine("Automatic");
+    }
+    else
+    {
+      write("Manual\nLights go on: ");
+      str = (String)lights_on;
+      write(str);
+      write("\nLights go off: ");
+      str = (String)lights_off;
+      writeLine(str);
+    }
+    writeLine("================================================================");
+
+    vTaskResume(UItaskHandle);
+  }
+}
+
+void timeIncrementTask(void *pvParameters)
+{
+  /*
+  Increments Time struct by 1 second when ever 1 second has passed
+
+  Setup for this task
+  */
+
+  for (;;)
+  {
+    /*
+    Running tasks
+    */
+
+    // Running simulation at higher speed, 1h / 3sec
+    updateTime(minutes, 20);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -455,6 +615,15 @@ void pumpTask(void *pvParameters)
   writeLine("Stop. Deleting task");
   // Delete the task. This is typically done to self-terminate the task.
   vTaskDelete(NULL);
+}
+
+/// @brief Fake sensor responce
+/// @param
+/// @return random value between 0 and 100
+uint16_t readLightLevel(void)
+{
+  int reading = random(0, 100);
+  return reading;
 }
 
 /// @brief Fake sensor responce
